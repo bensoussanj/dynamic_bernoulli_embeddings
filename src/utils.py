@@ -39,3 +39,5 @@ def variable_summaries(summary_name, var):
         tf.summary.scalar('max', tf.reduce_max(var))
         tf.summary.scalar('min', tf.reduce_min(var))
 
+def cosine_distance(z1, z2):
+    return 1-z1.dot(z2)/np.sqrt(z1.dot(z1) *((z2*z2).sum(0)))

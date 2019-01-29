@@ -29,8 +29,8 @@ class emb_model(object):
         self.dictionary = d.dictionary
         self.query_words = d.query_words
         self.train_feed = d.train_feed
-        #self.valid_data = d.valid_data
-        #self.test_data = d.test_data
+        self.valid_data = d.valid_data
+        self.test_data = d.test_data
         self.n_iter = args.n_iter
         self.n_epochs = d.n_epochs
         self.n_test = d.n_test
@@ -75,21 +75,17 @@ class emb_model(object):
             plot_with_labels(low_dim_embs_rho2[:plot_only], self.labels[:plot_only], self.logdir + '/rho.eps')
 
     def print_word_similarities(self, words, num):
-        query_word = tf.placeholder(dtype=tf.int32)
-        #query_rho = tf.expand_dims(self.rho, [0])
-         
-        val_rho, idx_rho = tf.nn.top_k(tf.matmul(tf.nn.l2_normalize(self.rho, dim=0), tf.nn.l2_normalize(self.alpha, dim=1), transpose_b=True), num)
-
+        with self.sess.as_default():
+            rho = self.rho.eval()
         for x in words:
+            x_idx = self.dictionary[x]
             f_name = os.path.join(self.logdir, '%s_queries.txt' % (x))
             with open(f_name, "w+") as text_file:
-                vr, ir = self.sess.run([val_rho, idx_rho], {query_word: self.dictionary[x]})
+                cos = cosine_distance(rho[x_idx], rho.T)
+                rank = np.argsort(cos)[1:num+1]
                 text_file.write("\n\n=====================================\n%s\n=====================================" % (x))
-                for ii in range(num):
-                    text_file.write("\n%-20s %6.4f" % (self.labels[ir[0,ii]], vr[0,ii]))
-
-    def print_topics(self, num):
-         pass
+                for r in rank:
+                    text_file.write("\n%-20s %6.4f" % (self.labels[r], cos[r]))
 
     def initialize_training(self):
         optimizer = tf.train.AdamOptimizer()
@@ -127,9 +123,9 @@ class emb_model(object):
         for data_pass in range(self.n_iter):
             for step in range(self.n_epochs):
                 if step % 100 == 0:
-                    print(str(step)+'/'+str(self.n_epochs)+'   iter '+str(data_pass))
-                    summary,_ = self.sess.run([self.summaries, self.train], feed_dict=self.train_feed(self.placeholders))
+                    summary, ll_pos, ll_neg, _ = self.sess.run([self.summaries, self.ll_pos, self.ll_neg, self.train], feed_dict=self.train_feed(self.placeholders))
                     self.train_writer.add_summary(summary, data_pass*(self.n_epochs) + step)
+                    print("%8d/%8d iter%3d; log-likelihood: %6.4f on positive samples,%6.4f on negative samples " % (step, self.n_epochs, data_pass, ll_pos, ll_neg))
                 else:
                     self.sess.run([self.train], feed_dict=self.train_feed(self.placeholders))
             self.dump(self.logdir+"/variational"+str(data_pass)+".dat")
@@ -138,7 +134,7 @@ class emb_model(object):
         self.print_word_similarities(self.query_words, 10)
         if self.dynamic:
             words = self.detect_drift()
-            self.print_word_similarities(words[:10], 1)
+            self.print_word_similarities(words[:10], 10)
         self.plot_params(500)
 
 
@@ -324,26 +320,20 @@ class dynamic_bern_emb_model(emb_model):
                text_file.write("\n%-20s %6.4f" % (self.labels[w], drift))
         return words
 
-    def print_word_similarities(self, words, num):
-        query_word = tf.placeholder(dtype=tf.int32)
-        query_rho_t = tf.placeholder(dtype=tf.float32)
-         
-        val_rho, idx_rho = tf.nn.top_k(tf.matmul(tf.nn.l2_normalize(query_rho_t, dim=0), tf.nn.l2_normalize(self.alpha, dim=1), transpose_b=True), num)
 
+    def print_word_similarities(self, words, num):
         for x in words:
+            x_idx = self.dictionary[x]
             f_name = os.path.join(self.logdir, '%s_queries.txt' % (x))
             with open(f_name, "w+") as text_file:
                 for t_idx in xrange(self.T):
                     with self.sess.as_default():
                         rho_t = self.rho_t[t_idx].eval()
-                    vr, ir = self.sess.run([val_rho, idx_rho], {query_word: self.dictionary[x], query_rho_t: rho_t})
-                    text_file.write("\n\n=====================================\n%s, t = %d\n=====================================" % (x,t_idx))
-                    for ii in range(num):
-                        text_file.write("\n%-20s %6.4f" % (self.labels[ir[0,ii]], vr[0,ii]))
-
-    def print_topics(self, num):
-        pass
-
+                    cos = cosine_distance(rho_t[x_idx], rho_t.T)
+                    rank = np.argsort(cos)[1:num+1]
+                    text_file.write("\n\n================================\n%s, t = %d\n================================" % (x,t_idx))
+                    for r in rank:
+                        text_file.write("\n%-20s %6.4f" % (self.labels[r], cos[r]))
 
 def define_model(args, d, logdir):
     if args.dynamic:
