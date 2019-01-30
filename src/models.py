@@ -29,8 +29,8 @@ class emb_model(object):
         self.dictionary = d.dictionary
         self.query_words = d.query_words
         self.train_feed = d.train_feed
-        self.valid_data = d.valid_data
-        self.test_data = d.test_data
+        #self.valid_data = d.valid_data
+        #self.test_data = d.test_data
         self.n_iter = args.n_iter
         self.n_epochs = d.n_epochs
         self.n_test = d.n_test
